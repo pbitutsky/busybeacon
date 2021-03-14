@@ -83,3 +83,15 @@ def create_device_from_ip_or_scan(ip, device_name):
                 device = dev
 
     return device
+
+def set_device_state(device, request_on=False):
+    """Turns the device (smart plug) on or off."""
+
+    # do nothing if the current device state is the same as the requested state
+    if device.is_on == request_on:
+        return 
+
+    if request_on:
+        asyncio.run(device.turn_on())
+    else:
+        asyncio.run(device.turn_off()) 
