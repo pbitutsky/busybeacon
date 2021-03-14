@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 import urllib.parse
 import json
 import pytz
+import asyncio
+from kasa import Discover, SmartPlug, exceptions
 
 # Replace this with the URL template corresponding to your calendar's events
 GCALENDAR_URL_TEMPLATE = "https://clients6.google.com/calendar/v3/calendars/email@gmail.com/events?calendarId=email%40gmail.com&singleEvents=true&timeZone={timezone}&maxAttendees=1&maxResults=250&sanitizeHtml=true&timeMin={start_datetime}&timeMax={end_datetime}&key=AIzaSxBNlYH01_8Hc5S1J9vuBZJNAXxs"
@@ -60,3 +62,24 @@ def check_if_busy(busy_times, time_to_check):
     return any(
         [start_time <= time_to_check <= end_time for start_time, end_time in busy_times]
     )
+
+def create_device_from_ip_or_scan(ip, device_name):
+    """Tries to create a kasa SmartDevice object either from a given IP address
+    or by scanning the network."""
+    device = None
+    if ip:
+        try:
+            device = SmartPlug(ip)
+            asyncio.run(device.update())
+        except exceptions.SmartDeviceException:
+            print("Unable to connect to device at provided IP. Attempting scan.")
+
+    # If unable to create device from ip, or ip is not given, scan the network.
+    if not device:
+        devices = asyncio.run(Discover.discover())
+        for _, dev in devices.items():
+            if dev.alias == device_name:
+                asyncio.run(dev.update())
+                device = dev
+
+    return device
