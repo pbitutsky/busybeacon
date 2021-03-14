@@ -54,4 +54,9 @@ def get_busy_times_from_google_calendar():
         busy_times.append((event_start, event_end))
 
     return busy_times
-    
+
+def check_if_busy(busy_times, time_to_check):
+    """Checks if I am busy at a given time. Returns True if busy, False if free."""
+    return any(
+        [start_time <= time_to_check <= end_time for start_time, end_time in busy_times]
+    )
