@@ -5,11 +5,14 @@ import json
 import pytz
 import asyncio
 from kasa import Discover, SmartPlug, exceptions
+import pickle
+import os
 
 # Replace this with the URL template corresponding to your calendar's events
 GCALENDAR_URL_TEMPLATE = "https://clients6.google.com/calendar/v3/calendars/email@gmail.com/events?calendarId=email%40gmail.com&singleEvents=true&timeZone={timezone}&maxAttendees=1&maxResults=250&sanitizeHtml=true&timeMin={start_datetime}&timeMax={end_datetime}&key=AIzaSxBNlYH01_8Hc5S1J9vuBZJNAXxs"
 LOCAL_TIMEZONE = "America/New_York"  # Replace this with your time zone.
 SMART_DEVICE_NAME = "Busybeacon" # Replace this with your smart device name
+LOCAL_CACHE_FILEPATH = "cache.pkl"
 
 WORKDAY_START = "9:00AM"
 WORKDAY_END = "10:00PM"
@@ -105,11 +108,34 @@ def main():
     timezone = pytz.timezone(LOCAL_TIMEZONE)
     now = timezone.localize(datetime.now())
 
-    # Get the busy times from Google Calendar.
-    busy_times = get_busy_times_from_google_calendar()
+    # Don't read from cache if the minute is divisible by 5 (e.g. 6:00, 6:05)
+    # or if the local cache does not exist
+    # or if the local cache has not yet been modified today
+    do_not_read_cache = (
+        now.minute % 5 == 0
+        or not os.path.exists(LOCAL_CACHE_FILEPATH)
+        or timezone.localize(
+            datetime.fromtimestamp(os.path.getmtime(LOCAL_CACHE_FILEPATH))
+        ).date()
+        != now.date()
+    )
 
-    # Get the smart plug by scanning local network.
-    smart_plug = create_device_from_ip_or_scan(None, SMART_DEVICE_NAME)
+    if do_not_read_cache:
+        # Get the busy times from Google Calendar.
+        busy_times = get_busy_times_from_google_calendar()
+
+        # Get the smart plug by scanning local network.
+        smart_plug = create_device_from_ip_or_scan(None, SMART_DEVICE_NAME)
+    
+    else:
+        # Read the busy times and smart plug IP from cache.
+        cache = open(LOCAL_CACHE_FILEPATH, "rb")
+        cached_data = pickle.load(cache)
+        cache.close()
+        busy_times = cached_data["busy_times"]
+        smart_plug = create_device_from_ip_or_scan(
+            cached_data["smart_plug_ip"], SMART_DEVICE_NAME
+        )
 
     # If we're outside of workday hours, do nothing except turn the plug off.
     workday_start_time = datetime.strptime(WORKDAY_START, "%I:%M%p").time()
@@ -126,6 +152,16 @@ def main():
     # Check if I'm busy right now and if so, turn the light on. Otherwise, turn it off
     busy_right_now = check_if_busy(busy_times, now)
     set_device_state(smart_plug, busy_right_now)
+
+    # Create the cache if it does not exist.
+    if not os.path.exists(LOCAL_CACHE_FILEPATH):
+        open(LOCAL_CACHE_FILEPATH, "w+").close()
+
+    # Write to the cache
+    data_to_write = {"smart_plug_ip": smart_plug.host, "busy_times": busy_times}
+    cache = open(LOCAL_CACHE_FILEPATH, "wb")
+    pickle.dump(data_to_write, cache)
+    cache.close()
 
 if __name__ == "__main__":
     main()
