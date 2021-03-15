@@ -9,6 +9,10 @@ from kasa import Discover, SmartPlug, exceptions
 # Replace this with the URL template corresponding to your calendar's events
 GCALENDAR_URL_TEMPLATE = "https://clients6.google.com/calendar/v3/calendars/email@gmail.com/events?calendarId=email%40gmail.com&singleEvents=true&timeZone={timezone}&maxAttendees=1&maxResults=250&sanitizeHtml=true&timeMin={start_datetime}&timeMax={end_datetime}&key=AIzaSxBNlYH01_8Hc5S1J9vuBZJNAXxs"
 LOCAL_TIMEZONE = "America/New_York"  # Replace this with your time zone.
+SMART_DEVICE_NAME = "Busybeacon" # Replace this with your smart device name
+
+WORKDAY_START = "9:00AM"
+WORKDAY_END = "10:00PM"
 
 def get_busy_times_from_google_calendar():
     """Returns a list of tuples (start time, end time) that represent busy times."""
@@ -95,3 +99,33 @@ def set_device_state(device, request_on=False):
         asyncio.run(device.turn_on())
     else:
         asyncio.run(device.turn_off()) 
+
+def main():
+    # Get the current time.
+    timezone = pytz.timezone(LOCAL_TIMEZONE)
+    now = timezone.localize(datetime.now())
+
+    # Get the busy times from Google Calendar.
+    busy_times = get_busy_times_from_google_calendar()
+
+    # Get the smart plug by scanning local network.
+    smart_plug = create_device_from_ip_or_scan(None, SMART_DEVICE_NAME)
+
+    # If we're outside of workday hours, do nothing except turn the plug off.
+    workday_start_time = datetime.strptime(WORKDAY_START, "%I:%M%p").time()
+    workday_end_time = datetime.strptime(WORKDAY_END, "%I:%M%p").time()
+    if not (workday_start_time <= now.time() <= workday_end_time):
+        set_device_state(smart_plug, False)
+        return
+
+    # If you can't find the smart plug on the local network, error and exit.
+    if not smart_plug:
+        print("Error! Unable to connect to smart device.")
+        return
+
+    # Check if I'm busy right now and if so, turn the light on. Otherwise, turn it off
+    busy_right_now = check_if_busy(busy_times, now)
+    set_device_state(smart_plug, busy_right_now)
+
+if __name__ == "__main__":
+    main()
